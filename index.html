@@ -104,7 +104,15 @@ async function poll() {
     const s = await r.json();
     orb.setMode(s.mode); $("state").textContent = LABEL[s.mode] || s.mode; $("state").style.color = s.mode === "error" ? "#FF5A5A" : "#3FE0C5";
     $("slide").textContent = `${s.slide + 1}/${s.total}　${s.title}`;
-    $("line").textContent = s.shown || s.line;
+    // ジャービスが話している・考えている間はジャービスのセリフ、それ以外はBOSSが次に言うセリフ(黄色)
+    const jarvisTurn = s.mode === "speak" || s.mode === "think";
+    $("line").innerHTML = "";
+    const who = document.createElement("div"), txt = document.createElement("div");
+    who.style.cssText = "font-size:18px;letter-spacing:.2em;margin-bottom:6px;color:" + (jarvisTurn ? "#3FE0C5" : "#FFD54A");
+    who.textContent = jarvisTurn ? "ジャービス" : "BOSSの番";
+    txt.style.color = jarvisTurn ? "#E8FFFB" : "#FFE9A8";
+    txt.textContent = jarvisTurn ? (s.mode === "think" ? "（考えています…）" : (s.shown || s.line)) : s.boss_next;
+    $("line").append(who, txt);
     $("heard").textContent = s.heard ? "BOSS：" + s.heard : "";
   } catch (e) { orb.setMode("error"); $("state").textContent = "ERROR"; $("line").textContent = "会社のパソコンにつながりません。"; }
   setTimeout(poll, 1000);
