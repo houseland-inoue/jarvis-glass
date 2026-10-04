@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=600,initial-scale=1">
+<title>ジャービス（グラス）</title>
+<style>
+/* Meta Ray-Ban Display：600×600固定・スクロールなし・黒は透明 */
+html,body{margin:0;width:600px;height:600px;overflow:hidden;background:#000;color:#E8FFFB;font-family:sans-serif}
+canvas{position:absolute;left:200px;top:8px;width:200px;height:200px}
+#state{position:absolute;left:0;top:206px;width:600px;text-align:center;font-size:18px;letter-spacing:.3em;color:#3FE0C5}
+#slide{position:absolute;left:24px;top:238px;width:552px;font-size:20px;color:#9FE8DD}
+#line{position:absolute;left:24px;top:272px;width:552px;height:250px;overflow:hidden;font-size:22px;line-height:1.5}
+#heard{position:absolute;left:24px;top:528px;width:552px;font-size:16px;color:#7FBFB6;white-space:nowrap;overflow:hidden}
+#ctrl{position:absolute;left:0;top:556px;width:600px;display:flex;justify-content:center;gap:12px}
+button{font-size:18px;background:#0A2A2A;color:#E8FFFB;border:2px solid #1E5E5A;border-radius:12px;padding:4px 14px}
+button:focus{border-color:#3FE0C5;outline:none}
+</style></head><body>
+<canvas id="orb"></canvas>
+<div id="state">STANDBY</div>
+<div id="slide"></div>
+<div id="line">つないでいます…</div>
+<div id="heard"></div>
+<div id="ctrl"><button id="prev">← 前</button><button id="explain">説明</button><button id="next" autofocus>次 →</button></div>
+<script>// ジャービスの球体(プレゼン用の2つの画面で共通)。JarvisOrb(canvas) → {setMode(m), pulse()}
+function JarvisOrb(cvs, opt) {
+  opt = opt || {};
+  const X = cvs.getContext("2d");
+  let W = 0;
+  function rs() { const s = Math.min(cvs.clientWidth, cvs.clientHeight) || 300; W = s * 2; cvs.width = cvs.height = W; }
+  addEventListener("resize", rs); rs();
+  function n(p) { const l = Math.hypot(p[0], p[1], p[2]); return [p[0] / l, p[1] / l, p[2] / l]; }
+  const t = (1 + Math.sqrt(5)) / 2;
+  let v = [[-1,t,0],[1,t,0],[-1,-t,0],[1,-t,0],[0,-1,t],[0,1,t],[0,-1,-t],[0,1,-t],[t,0,-1],[t,0,1],[-t,0,-1],[-t,0,1]].map(n);
+  let f = [[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],[3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]];
+  for (let k = 0; k < 2; k++) {
+    const ca = {}, nf = [];
+    const m = (a, b) => { const key = a < b ? a + "_" + b : b + "_" + a; if (ca[key] !== undefined) return ca[key];
+      v.push(n([(v[a][0] + v[b][0]) / 2, (v[a][1] + v[b][1]) / 2, (v[a][2] + v[b][2]) / 2])); return ca[key] = v.length - 1; };
+    for (const [a, b, c] of f) { const ab = m(a, b), bc = m(b, c), cc = m(c, a); nf.push([a, ab, cc], [b, bc, ab], [c, cc, bc], [ab, bc, cc]); }
+    f = nf;
+  }
+  const E = new Set();
+  for (const [a, b, c] of f) for (const [x, y] of [[a, b], [b, c], [c, a]]) E.add(x < y ? x + "," + y : y + "," + x);
+  const ED = [...E].map(s => s.split(",").map(Number));
+  const MODES = {
+    idle:   {spin: .15, wave: .25, ring: .35, glow: .55, c1: [63,224,197], c3: [70,150,190], c4: [225,250,245]},
+    listen: {spin: .25, wave: .6,  ring: .6,  glow: .75, c1: [63,224,197], c3: [70,150,190], c4: [225,250,245]},
+    think:  {spin: 1.2, wave: .45, ring: 1,   glow: .85, c1: [63,224,197], c3: [70,150,190], c4: [225,250,245]},
+    speak:  {spin: .35, wave: 1,   ring: .7,  glow: 1,   c1: [63,224,197], c3: [70,150,190], c4: [225,250,245]},
+    error:  {spin: 2.6, wave: 1.7, ring: .8,  glow: 1,   c1: [255,64,64],  c3: [205,40,52],  c4: [255,215,210]},
+  };
+  let mode = "idle", cur = JSON.parse(JSON.stringify(MODES.idle)), T = 0, ry = 0, rx = .35, vo = 0, vt = 0, last = performance.now();
+  const rgba = (c, a) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${Math.max(0, Math.min(a, 1))})`;
+  function nz(a, t, s) { return Math.sin(a * 3 + t * 1.3 + s) * .5 + Math.sin(a * 5 - t * .9 + s * 2) * .3 + Math.sin(a * 9 + t * 2.1 + s * 3) * .2; }
+  function fr(now) {
+    const dt = Math.min((now - last) / 1000, .05); last = now; T += dt;
+    const e = Math.min(dt * 3, 1);
+    for (const k in cur) { if (Array.isArray(cur[k])) cur[k] = cur[k].map((x, i) => x + (MODES[mode][k][i] - x) * e); else cur[k] += (MODES[mode][k] - cur[k]) * e; }
+    if (mode === "speak") { if (Math.random() < dt * 9) vt = .35 + Math.random() * .65; vt *= Math.pow(.02, dt); }
+    else if (mode === "error") vt = .6 + Math.random() * .4;
+    else vt = mode === "listen" ? .25 + .2 * Math.sin(T * 6) : 0;
+    vo += (vt - vo) * Math.min(dt * 14, 1);
+    const alarm = mode === "error" ? .5 + .5 * Math.sin(T * 14) : 0, flick = mode === "error" && Math.random() < .15 ? .3 : 1;
+    ry += dt * cur.spin * (mode === "error" ? (Math.random() < .2 ? -1.5 : 1.6) : 1);
+    rx = mode === "error" ? .35 + Math.sin(T * 23) * .25 : rx + (.35 - rx) * e;
+    const sh = mode === "error" ? W * .012 : 0, c = W / 2 + (Math.random() - .5) * sh, R = W * .17;
+    X.clearRect(0, 0, W, W);
+    const g = X.createRadialGradient(c, c, R * .2, c, c, R * 2.4);
+    g.addColorStop(0, rgba(cur.c1, (.28 * cur.glow + .25 * vo + .2 * alarm) * flick)); g.addColorStop(1, rgba(cur.c1, 0));
+    X.fillStyle = g; X.fillRect(0, 0, W, W);
+    for (let s = 0; s < 4; s++) {
+      const b = R * (2.05 + s * .07), am = R * (.05 + .22 * cur.wave * (.4 + vo)); X.beginPath();
+      for (let i = 0; i <= 200; i++) { const a = i / 200 * Math.PI * 2, r = b + am * nz(a, T * (1 + s * .3) * (.6 + cur.wave), s * 1.7);
+        i ? X.lineTo(c + Math.cos(a) * r, c + Math.sin(a) * r) : X.moveTo(c + Math.cos(a) * r, c + Math.sin(a) * r); }
+      X.strokeStyle = rgba(cur.c1, (.18 + .12 * s / 3 + .25 * vo) * flick); X.lineWidth = W * .002; X.stroke();
+    }
+    const sg = 56, r1 = R * 1.42, r2 = R * 1.82;
+    for (let i = 0; i < sg; i++) {
+      const a0 = i / sg * Math.PI * 2 + T * .08, a1 = a0 + Math.PI * 2 / sg * .78;
+      const ch = mode === "think" ? Math.max(0, Math.cos(a0 - T * 4)) ** 6 : 0;
+      const lv = (.12 + .25 * cur.ring + .6 * ch + .35 * vo * Math.abs(Math.sin(i * 1.7 + T * 8)) + .55 * alarm) * flick;
+      X.beginPath(); X.arc(c, c, r2, a0, a1); X.arc(c, c, r1, a1, a0, true); X.closePath(); X.fillStyle = rgba(cur.c3, Math.min(lv, .95)); X.fill();
+    }
+    const cy = Math.cos(ry), sy = Math.sin(ry), cx = Math.cos(rx), sx = Math.sin(rx);
+    const P = v.map(([x, y, z]) => { const x1 = x * cy + z * sy, z1 = -x * sy + z * cy, y1 = y * cx - z1 * sx, z2 = y * sx + z1 * cx, k = 1 + .04 * vo * Math.sin(x * 9 + T * 10); return [c + x1 * R * k, c + y1 * R * k, z2]; });
+    X.lineWidth = W * .0018;
+    for (const [a, b] of ED) { const z = (P[a][2] + P[b][2]) / 2; X.strokeStyle = rgba(cur.c4, (z > 0 ? .85 : .18) * (.6 + .4 * cur.glow) * flick); X.beginPath(); X.moveTo(P[a][0], P[a][1]); X.lineTo(P[b][0], P[b][1]); X.stroke(); }
+    X.beginPath(); X.arc(c, c, R * 1.04, 0, Math.PI * 2); X.strokeStyle = rgba(cur.c1, (.6 + .4 * cur.glow) * flick); X.lineWidth = W * .006; X.stroke();
+    requestAnimationFrame(fr);
+  }
+  requestAnimationFrame(fr);
+  return { setMode(m) { if (MODES[m]) mode = m; }, get mode() { return mode; } };
+}
+</script>
+<script>
+const API = "https://duke-pogo-paying.ngrok-free.dev";
+const K = (location.hash.match(/k=([^&]+)/) || location.search.match(/k=([^&]+)/) || [])[1] || "";
+const H = {"ngrok-skip-browser-warning": "1", "Content-Type": "application/json"};
+const orb = JarvisOrb(document.getElementById("orb"));
+const $ = id => document.getElementById(id);
+const LABEL = {idle: "STANDBY", listen: "LISTENING", think: "PROCESSING", speak: "SPEAKING", error: "ERROR"};
+async function cmd(c) { try { await fetch(`${API}/jarvis/api/cmd?k=${K}`, {method: "POST", headers: H, body: JSON.stringify({cmd: c})}); } catch (e) {} }
+async function poll() {
+  try {
+    const r = await fetch(`${API}/jarvis/api/state?k=${K}`, {headers: {"ngrok-skip-browser-warning": "1"}});
+    const s = await r.json();
+    orb.setMode(s.mode); $("state").textContent = LABEL[s.mode] || s.mode; $("state").style.color = s.mode === "error" ? "#FF5A5A" : "#3FE0C5";
+    $("slide").textContent = `${s.slide + 1}/${s.total}　${s.title}`;
+    $("line").textContent = s.shown || s.line;
+    $("heard").textContent = s.heard ? "BOSS：" + s.heard : "";
+  } catch (e) { orb.setMode("error"); $("state").textContent = "ERROR"; $("line").textContent = "会社のパソコンにつながりません。"; }
+  setTimeout(poll, 1000);
+}
+$("prev").onclick = () => cmd("prev"); $("explain").onclick = () => cmd("explain"); $("next").onclick = () => cmd("next");
+// 手首のバンド：左右＝ボタンの移動、つまむ(Enter)＝押す。右左キーでも直接操作できる
+addEventListener("keydown", e => {
+  if (e.key === "ArrowRight" && document.activeElement === $("next")) { e.preventDefault(); cmd("next"); }
+  if (e.key === "ArrowLeft" && document.activeElement === $("prev")) { e.preventDefault(); cmd("prev"); }
+  if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+    const order = ["prev", "explain", "next"], i = order.indexOf(document.activeElement && document.activeElement.id);
+    const j = Math.max(0, Math.min(2, (i < 0 ? 2 : i) + (e.key === "ArrowRight" ? 1 : -1))); $(order[j]).focus();
+  }
+});
+$("next").focus();
+poll();
+</script></body></html>
