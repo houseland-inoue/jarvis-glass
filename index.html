@@ -127,6 +127,58 @@ addEventListener("keydown", e => {
     const j = Math.max(0, Math.min(2, (i < 0 ? 2 : i) + (e.key === "ArrowRight" ? 1 : -1))); $(order[j]).focus();
   }
 });
-$("next").focus();
-poll();
+// ---- 声のジャービス(本番版)：最初からこちら(BOSS決定 2026-10-05)。プレゼン用の画面は URL に m=p を付けたとき ----
+// iPhoneで話した内容の状態・要約・「実行しますか？」を映す。つまむ(Enter)＝承認、Escape＝取り消し。大事な操作(high)はグラスでは承認できない(iPhoneのボタンだけ)
+const VOICE = !/(?:^|[#&?])m=p(?:&|$)/.test(location.hash + "&" + location.search.replace("?", "&"));
+let vPending = null, vMsg = "", vMsgAt = 0;
+async function vpost(path, body) {
+  try { const r = await fetch(`${API}${path}?k=${K}`, {method: "POST", headers: H, body: JSON.stringify(body || {})}); return await r.json(); } catch (e) { return null; }
+}
+async function vpoll() {
+  try {
+    const r = await fetch(`${API}/jarvis/v/state?k=${K}`, {headers: {"ngrok-skip-browser-warning": "1"}});
+    const s = await r.json();
+    orb.setMode(s.mode); $("state").textContent = LABEL[s.mode] || s.mode; $("state").style.color = s.mode === "error" ? "#FF5A5A" : "#3FE0C5";
+    $("slide").textContent = s.working ? "作業中…" : (s.deep && s.mode === "think" ? "じっくり考えています" : "");
+    vPending = s.pending;
+    $("line").innerHTML = "";
+    const who = document.createElement("div"), txt = document.createElement("div");
+    who.style.cssText = "font-size:18px;letter-spacing:.2em;margin-bottom:6px;color:#3FE0C5";
+    who.textContent = "ジャービス";
+    txt.textContent = s.mode === "think" && !s.working ? "（考えています…）" : (s.summary || "");
+    $("line").append(who, txt);
+    if (s.pending) {
+      const box = document.createElement("div");
+      box.style.cssText = "margin-top:14px;padding:10px 12px;border:2px solid " + (s.pending.high ? "#FF5A5A" : "#FFD54A") + ";border-radius:12px;color:#FFE9A8";
+      box.textContent = "実行しますか？ " + s.pending.label.slice(0, 40);
+      const hint = document.createElement("div");
+      hint.style.cssText = "font-size:17px;margin-top:6px;color:" + (s.pending.high ? "#FF9A9A" : "#9FE8DD");
+      hint.textContent = s.pending.high ? "大事な操作です。iPhoneで承認してください（Escで取り消し）" : "つまむ(Enter)で実行／Escで取り消し";
+      box.append(hint); $("line").append(box);
+    }
+    $("heard").textContent = Date.now() - vMsgAt < 6000 ? vMsg : (s.heard ? "BOSS：" + s.heard : "");
+  } catch (e) { orb.setMode("error"); $("state").textContent = "ERROR"; $("line").textContent = "会社のパソコンにつながりません。"; }
+  setTimeout(vpoll, 1000);
+}
+if (VOICE) {
+  document.title = "ジャービス（声）";
+  $("ctrl").style.display = "none";
+  addEventListener("keydown", async e => {
+    if (e.key === "Enter" && vPending) {
+      e.preventDefault();
+      if (vPending.high) { vMsg = "iPhoneの画面で承認してください"; vMsgAt = Date.now(); return; }
+      const r = await vpost("/jarvis/v/confirm", {id: vPending.id, device: "glass"});
+      vMsg = r ? r.answer : "つながりません"; vMsgAt = Date.now();
+    }
+    if (e.key === "Escape" && vPending) {
+      e.preventDefault();
+      const r = await vpost("/jarvis/v/cancel");
+      vMsg = r ? r.answer : "つながりません"; vMsgAt = Date.now();
+    }
+  }, true);
+  vpoll();
+} else {
+  $("next").focus();
+  poll();
+}
 </script></body></html>
